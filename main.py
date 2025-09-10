@@ -1,5 +1,5 @@
 from xdpchandler import *
-
+import os
 if __name__ == "__main__":
     XdpcHandler = XdpcHandler()
 
@@ -85,6 +85,8 @@ if __name__ == "__main__":
     time.sleep(0.5)
     
     logFileName = "logfile_" + device.bluetoothAddress().replace(':', '-') + ".csv"
+    if(os.path.exists(logFileName)):
+        os.remove(logFileName)
     print(f"Enable logging to: {logFileName}")
     if not device.enableLogging(logFileName):
         print(f"Failed to enable logging. Reason: {device.lastResultText()}")
@@ -115,7 +117,7 @@ if __name__ == "__main__":
         XdpcHandler.cleanup()
         exit(-1)
     
-    print(f"\nMain loop. Recording data for 10 seconds from device: {device.bluetoothAddress()}")
+    print(f"\nMain loop. Recording data for 20 seconds from device: {device.bluetoothAddress()}")
     print("-" * 80)
     print(f"{'Device Address':42} {'Quaternion Data'}")
     print(f"{device.bluetoothAddress():42}")
@@ -123,7 +125,7 @@ if __name__ == "__main__":
     orientationResetDone = False
     startTime = movelladot_pc_sdk.XsTimeStamp_nowMs()
     
-    while movelladot_pc_sdk.XsTimeStamp_nowMs() - startTime <= 10000:
+    while movelladot_pc_sdk.XsTimeStamp_nowMs() - startTime <= 20000:
         if XdpcHandler.packetsAvailable():
             # Retrieve packet for our specific device
             packet = XdpcHandler.getNextPacket(device.bluetoothAddress())
@@ -133,15 +135,6 @@ if __name__ == "__main__":
                 s = f"W:{quat[0]:7.4f}, X:{quat[1]:7.4f}, Y:{quat[2]:7.4f}, Z:{quat[3]:7.4f}"
                 print(f"{s}\r", end="", flush=True)
 
-            # Reset orientation after 5 seconds
-            if not orientationResetDone and movelladot_pc_sdk.XsTimeStamp_nowMs() - startTime > 5000:
-                print(f"\nResetting heading for device {device.bluetoothAddress()}: ", end="", flush=True)
-                if device.resetOrientation(movelladot_pc_sdk.XRM_Heading):
-                    print("OK", end="", flush=True)
-                else:
-                    print(f"NOK: {device.lastResultText()}", end="", flush=True)
-                print("\n", end="", flush=True)
-                orientationResetDone = True
     
     print("\n" + "-" * 80, end="", flush=True)
 

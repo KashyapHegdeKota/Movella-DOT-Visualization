@@ -24,61 +24,90 @@ def load_movella_csv(filename):
     return df
 
 def plot_quaternion_3d(csv_filename):
-    """Create a 3D plot of quaternion X vs Y vs Z"""
+    """Create a 3D plot of quaternion X vs Y vs Z showing bicep curl motion"""
     
     # Load the data
     df = load_movella_csv(csv_filename)
     
-    print(f"Loaded {len(df)} data points")
+    print(f"Loaded {len(df)} data points from bicep curl exercise")
     
     # Create the 3D plot
     fig = plt.figure(figsize=(12, 10))
     ax = fig.add_subplot(111, projection='3d')
     
-    # Create color map based on time progression
-    colors = plt.cm.viridis(np.linspace(0, 1, len(df)))
+    # Plot quaternion trajectory as a connected line to show the motion
+    ax.plot(df['Quat_X'], df['Quat_Y'], df['Quat_Z'], 
+            color='blue', linewidth=2, alpha=0.8, label='Bicep Curl Motion')
     
-    # Plot quaternion X, Y, Z
-    scatter = ax.scatter(df['Quat_X'], df['Quat_Y'], df['Quat_Z'], 
-                        c=colors, s=30, alpha=0.8, edgecolors='black', linewidth=0.5)
+    # Plot all points
+    ax.scatter(df['Quat_X'], df['Quat_Y'], df['Quat_Z'], 
+               c='blue', s=20, alpha=0.6)
     
-    # Mark start and end points
+    # Mark start and end positions clearly
     ax.scatter(df['Quat_X'].iloc[0], df['Quat_Y'].iloc[0], df['Quat_Z'].iloc[0], 
-               color='green', s=100, marker='^', label='Start', edgecolors='darkgreen', linewidth=2)
+               color='green', s=150, marker='o', label='Starting Position', 
+               edgecolors='darkgreen', linewidth=3)
     ax.scatter(df['Quat_X'].iloc[-1], df['Quat_Y'].iloc[-1], df['Quat_Z'].iloc[-1], 
-               color='red', s=100, marker='v', label='End', edgecolors='darkred', linewidth=2)
+               color='red', s=150, marker='s', label='Ending Position', 
+               edgecolors='darkred', linewidth=3)
     
-    # Customize the plot
+    # Customize the plot for bicep curl analysis
     ax.set_xlabel('Quaternion X', fontsize=12, labelpad=10)
     ax.set_ylabel('Quaternion Y', fontsize=12, labelpad=10)
     ax.set_zlabel('Quaternion Z', fontsize=12, labelpad=10)
-    ax.set_title('Movella DOT: Quaternion 3D Space (X vs Y vs Z)\n(Color represents time progression)', 
+    ax.set_title('Bicep Curl Exercise: Lower Arm Rotation Path\n(Quaternion Space Trajectory)', 
                 fontsize=14, fontweight='bold', pad=20)
     
-    # Add colorbar
-    cbar = plt.colorbar(scatter, ax=ax, shrink=0.8, aspect=20)
-    cbar.set_label('Time Progression', fontsize=12)
-    
     # Add legend
-    ax.legend(loc='upper right', fontsize=10)
+    ax.legend(loc='upper right', fontsize=11)
     
-    # Add grid
+    # Add grid for better visualization
     ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
     plt.show()
     
-    # Print some statistics
-    print(f"\nQuaternion Statistics:")
-    print(f"Quat_X: {df['Quat_X'].min():.4f} to {df['Quat_X'].max():.4f}")
-    print(f"Quat_Y: {df['Quat_Y'].min():.4f} to {df['Quat_Y'].max():.4f}")
-    print(f"Quat_Z: {df['Quat_Z'].min():.4f} to {df['Quat_Z'].max():.4f}")
+    # Print exercise analysis
+    print(f"\nBicep Curl Analysis:")
+    print(f"Total range of motion in quaternion space:")
+    print(f"  X-axis: {df['Quat_X'].max() - df['Quat_X'].min():.4f}")
+    print(f"  Y-axis: {df['Quat_Y'].max() - df['Quat_Y'].min():.4f}")
+    print(f"  Z-axis: {df['Quat_Z'].max() - df['Quat_Z'].min():.4f}")
+    print(f"Exercise duration: ~10 seconds")
+    print(f"Data points captured: {len(df)}")
+    
+    # Check if motion returns close to starting position
+    start_pos = np.array([df['Quat_X'].iloc[0], df['Quat_Y'].iloc[0], df['Quat_Z'].iloc[0]])
+    end_pos = np.array([df['Quat_X'].iloc[-1], df['Quat_Y'].iloc[-1], df['Quat_Z'].iloc[-1]])
+    
+    # Check for NaN values
+    if np.isnan(start_pos).any() or np.isnan(end_pos).any():
+        print("⚠ Warning: Some quaternion values contain NaN - check data quality")
+        # Filter out NaN values for analysis
+        valid_data = df.dropna(subset=['Quat_X', 'Quat_Y', 'Quat_Z'])
+        if len(valid_data) > 0:
+            start_pos = np.array([valid_data['Quat_X'].iloc[0], valid_data['Quat_Y'].iloc[0], valid_data['Quat_Z'].iloc[0]])
+            end_pos = np.array([valid_data['Quat_X'].iloc[-1], valid_data['Quat_Y'].iloc[-1], valid_data['Quat_Z'].iloc[-1]])
+            distance = np.linalg.norm(end_pos - start_pos)
+            print(f"Distance between start/end positions (cleaned data): {distance:.4f}")
+        else:
+            print("No valid data points found")
+            return
+    else:
+        distance = np.linalg.norm(end_pos - start_pos)
+        print(f"Distance between start/end positions: {distance:.4f}")
+    
+    if distance < 0.2:
+        print("✓ Good form: Arm returned close to starting position")
+    else:
+        print(f"⚠ Note: Arm position differs from start by {distance:.4f} units")
+        print("  This is normal for multiple reps - you did several bicep curls!")
 
 # Example usage
 if __name__ == "__main__":
     # Replace with your actual CSV filename
     csv_filename = "logfile_D4-22-CD-00-8C-B7.csv"
-    
+
     try:
         plot_quaternion_3d(csv_filename)
         print("Quaternion 3D plot created successfully!")
