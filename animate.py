@@ -9,7 +9,7 @@ from scipy.spatial.transform import Rotation as R
 df = pd.read_csv('logfile_D4-22-CD-00-8C-B7.csv', skiprows=1)
 
 # Downsample the data to every 10th sample to reduce animation time and file size
-df = df.iloc[::10, :]
+df = df.iloc[::15, :]
 
 # Extract quaternion data
 quaternions = df[['Quat_W', 'Quat_X', 'Quat_Y', 'Quat_Z']].to_numpy()
@@ -17,7 +17,7 @@ quaternions = df[['Quat_W', 'Quat_X', 'Quat_Y', 'Quat_Z']].to_numpy()
 # Create a figure and a 3D axes
 fig = plt.figure(figsize=(8, 8))
 ax = fig.add_subplot(111, projection='3d')
-ax.set_title('Bicep Curl Animation (Side View)')
+ax.set_title('Bicep Curl Animation (Elbow Pivot)')
 ax.set_xlabel('X-axis')
 ax.set_ylabel('Y-axis')
 ax.set_zlabel('Z-axis')
@@ -36,8 +36,9 @@ radius = 0.1
 length = 0.8
 resolution = 20
 
-# Create the cylinder vertices with the length parallel to the X-axis and centered
-x = np.linspace(-length / 2.0, length / 2.0, resolution)
+# Create the cylinder vertices so one end is at the origin (0,0,0)
+# This makes the origin the pivot point, simulating the elbow joint.
+x = np.linspace(0, length, resolution) # Shifted from (-len/2, len/2) to (0, len)
 theta = np.linspace(0, 2 * np.pi, resolution)
 theta_grid, x_grid = np.meshgrid(theta, x)
 y_grid = radius * np.cos(theta_grid)
@@ -74,6 +75,5 @@ def update(frame):
 ani = FuncAnimation(fig, update, frames=len(quaternions), blit=False, interval=100)
 
 # Save the animation as a new gif file
-ani.save('bicep_curl_side_view.gif', writer='imagemagick', fps=10)
+ani.save('bicep_curl_elbow_pivot.gif', writer='imagemagick', fps=10)
 
-plt.close()
