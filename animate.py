@@ -5,137 +5,129 @@ from matplotlib.animation import FuncAnimation
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.spatial.transform import Rotation as R
 
-# Load the data, skipping the first metadata row, the second row is the header
-df = pd.read_csv('logfile_D4-22-CD-00-8C-B7.csv', skiprows=1)
+# --- 1. Load and Prepare Data ---
+df_forearm = pd.read_csv('logfile_forearm_D4-22-CD-00-8C-B7.csv', skiprows=1)
+df_forearm = df_forearm.iloc[::15, :]
+quat_forearm = df_forearm[['Quat_W', 'Quat_X', 'Quat_Y', 'Quat_Z']].to_numpy()
 
-# Downsample the data to every 15th sample for smoother and faster animation
-df = df.iloc[::15, :]
+df_upper_arm = pd.read_csv('logfile_upper_arm_D4-22-CD-00-8C-86.csv', skiprows=1)
+df_upper_arm = df_upper_arm.iloc[::15, :]
+quat_upper_arm = df_upper_arm[['Quat_W', 'Quat_X', 'Quat_Y', 'Quat_Z']].to_numpy()
 
-# Extract quaternion data and handle potential zero-norm quaternions
-quaternions = df[['Quat_W', 'Quat_X', 'Quat_Y', 'Quat_Z']].to_numpy()
-valid_indices = np.linalg.norm(quaternions, axis=1) > 1e-6
-quaternions = quaternions[valid_indices]
+min_frames = min(len(quat_forearm), len(quat_upper_arm))
+quat_forearm = quat_forearm[:min_frames]
+quat_upper_arm = quat_upper_arm[:min_frames]
 
 
-# --- 1. Define Geometry for Forearm and Hand ---
+# --- 2. Define Geometry ---
+# Shoulder is at origin (0,0,0). Upper arm extends down (-Z). Forearm extends further down.
+resolution = 20
+theta = np.linspace(0, 2 * np.pi, resolution)
+phi = np.linspace(0, 2 * np.pi, resolution)
+theta_sphere, phi_sphere = np.meshgrid(theta, phi)
 
-# Common properties
-resolution = 20 # Number of points to define the shapes
+# Upper Arm (Cylinder) - Extends from origin down the Z-axis
+upper_arm_length = 0.8
+upper_arm_radius = 0.12
+z_upper_arm = np.linspace(0, -upper_arm_length, resolution)
+theta_grid_u, z_grid_u = np.meshgrid(theta, z_upper_arm)
+x_grid_u = upper_arm_radius * np.cos(theta_grid_u)
+y_grid_u = upper_arm_radius * np.sin(theta_grid_u)
+original_upper_arm_vertices = np.stack([x_grid_u, y_grid_u, z_grid_u], axis=2)
 
-# Forearm (Cylinder) properties
+# Shoulder (Sphere) - at the origin
+shoulder_radius = 0.15
+x_shoulder = shoulder_radius * np.sin(theta_sphere) * np.cos(phi_sphere)
+y_shoulder = shoulder_radius * np.sin(theta_sphere) * np.sin(phi_sphere)
+z_shoulder = shoulder_radius * np.cos(theta_sphere)
+original_shoulder_vertices = np.stack([x_shoulder, y_shoulder, z_shoulder], axis=2)
+
+# Forearm (Cylinder) - Also defined locally, starting from origin and extending down
 forearm_length = 0.8
 forearm_radius = 0.1
+z_forearm = np.linspace(0, -forearm_length, resolution)
+theta_grid_f, z_grid_f = np.meshgrid(theta, z_forearm)
+x_grid_f = forearm_radius * np.cos(theta_grid_f)
+y_grid_f = forearm_radius * np.sin(theta_grid_f)
+original_forearm_vertices = np.stack([x_grid_f, y_grid_f, z_grid_f], axis=2)
 
-# Create the forearm vertices with one end at the origin (elbow pivot)
-x_forearm = np.linspace(0, forearm_length, resolution)
-theta = np.linspace(0, 2 * np.pi, resolution)
-theta_grid, x_grid = np.meshgrid(theta, x_forearm)
-y_grid = forearm_radius * np.cos(theta_grid)
-z_grid = forearm_radius * np.sin(theta_grid)
-original_forearm_vertices = np.stack([x_grid, y_grid, z_grid], axis=2)
-
-# Hand (Sphere) properties
-fist_radius = 0.15 # Slightly larger than forearm
-
-# Create the fist vertices, centered at the end of the forearm
-phi = np.linspace(0, 2 * np.pi, resolution)
-theta = np.linspace(0, np.pi, resolution)
-phi_grid, theta_grid = np.meshgrid(phi, theta)
-
-# Place the sphere at the end of the forearm
-x_fist = fist_radius * np.sin(theta_grid) * np.cos(phi_grid) + forearm_length
-y_fist = fist_radius * np.sin(theta_grid) * np.sin(phi_grid)
-z_fist = fist_radius * np.cos(theta_grid)
+# Hand (Sphere) - At the end of the local forearm definition
+fist_radius = 0.12
+x_fist = fist_radius * np.sin(theta_sphere) * np.cos(phi_sphere)
+y_fist = fist_radius * np.sin(theta_sphere) * np.sin(phi_sphere)
+z_fist = fist_radius * np.cos(theta_sphere) - forearm_length
 original_fist_vertices = np.stack([x_fist, y_fist, z_fist], axis=2)
 
-
-
-# Elbow (Sphere) properties
-elbow_radius = 0.12 # Make it slightly larger than the forearm
-
-# Create the elbow vertices, centered at the origin (0,0,0)
-# This is the same formula as the fist, but without the forearm_length offset
-x_elbow = elbow_radius * np.sin(theta_grid) * np.cos(phi_grid)
-y_elbow = elbow_radius * np.sin(theta_grid) * np.sin(phi_grid)
-z_elbow = elbow_radius * np.cos(theta_grid)
+# Elbow (Sphere) - Also defined locally at the origin
+elbow_radius = 0.1
+x_elbow = elbow_radius * np.sin(theta_sphere) * np.cos(phi_sphere)
+y_elbow = elbow_radius * np.sin(theta_sphere) * np.sin(phi_sphere)
+z_elbow = elbow_radius * np.cos(theta_sphere)
 original_elbow_vertices = np.stack([x_elbow, y_elbow, z_elbow], axis=2)
 
 
-# --- 2. Set up the 3D Plot ---
-
-fig = plt.figure(figsize=(8, 8))
+# --- 3. Set up the 3D Plot ---
+fig = plt.figure(figsize=(8, 8)) # Adjusted figure size for better aspect ratio
 ax = fig.add_subplot(111, projection='3d')
-ax.set_title('Bicep Curl Animation')
+ax.set_title('Bicep Curl Animation (Side View)')
 
-# Set a better camera angle to view the curl
-ax.view_init(elev=20, azim=70)
+# <<< CHANGE IS HERE >>>
+ax.view_init(elev=15, azim=0) # Set camera to a side view
 
-# Set axis limits and aspect ratio
-ax.set_xlim([-1, 1])
-ax.set_ylim([-1, 1])
-ax.set_zlim([-1, 1])
+ax.set_xlim([-1.5, 1.5]); ax.set_ylim([-1.5, 1.5]); ax.set_zlim([-1.5, 1.5])
+ax.set_xlabel('X'); ax.set_ylabel('Y'); ax.set_zlabel('Z')
 ax.set_aspect('equal')
 
-# Create the initial plot objects for the arm and hand
-forearm_plot = ax.plot_surface(
-    original_forearm_vertices[:,:,0],
-    original_forearm_vertices[:,:,1],
-    original_forearm_vertices[:,:,2],
-    color='lightcoral', alpha=0.8)
-
-fist_plot = ax.plot_surface(
-    original_fist_vertices[:,:,0],
-    original_fist_vertices[:,:,1],
-    original_fist_vertices[:,:,2],
-    color='darksalmon', alpha=0.9)
+# Create initial plot objects
+shoulder_plot = ax.plot_surface(*original_shoulder_vertices.T, color='mediumslateblue')
+upper_arm_plot = ax.plot_surface(*original_upper_arm_vertices.T, color='skyblue')
+elbow_plot = ax.plot_surface(*original_elbow_vertices.T, color='royalblue')
+forearm_plot = ax.plot_surface(*original_forearm_vertices.T, color='lightcoral')
+fist_plot = ax.plot_surface(*original_fist_vertices.T, color='darksalmon')
 
 
-# Draw the stationary elbow joint
-elbow_plot = ax.plot_surface(
-    original_elbow_vertices[:,:,0],
-    original_elbow_vertices[:,:,1],
-    original_elbow_vertices[:,:,2],
-    color='royalblue', alpha=0.9)
-# --- 3. Animation Update Function ---
+# --- 4. Define Correction and Animation Function ---
+# Calculate initial offset rotations to align sensor data with the model's T-pose
+initial_upper_arm_rot_inv = R.from_quat(np.roll(quat_upper_arm[0], -1)).inv()
+initial_forearm_rot_inv = R.from_quat(np.roll(quat_forearm[0], -1)).inv()
 
 def update(frame):
-    global forearm_plot, fist_plot
-    
-    # Get the quaternion for the current frame
-    quat = quaternions[frame]
-    
-    # Create a rotation object (x, y, z, w)
-    rotation = R.from_quat([quat[1], quat[2], quat[3], quat[0]])
+    global shoulder_plot, upper_arm_plot, elbow_plot, forearm_plot, fist_plot
 
-    # Apply the same rotation to both the forearm and the fist vertices
-    rotated_forearm = rotation.apply(original_forearm_vertices.reshape(-1, 3)).reshape(original_forearm_vertices.shape)
-    rotated_fist = rotation.apply(original_fist_vertices.reshape(-1, 3)).reshape(original_fist_vertices.shape)
+    # Get current sensor orientations and normalize them to the start of the recording
+    rot_upper_arm_abs = R.from_quat(np.roll(quat_upper_arm[frame], -1)) * initial_upper_arm_rot_inv
+    rot_forearm_abs = R.from_quat(np.roll(quat_forearm[frame], -1)) * initial_forearm_rot_inv
 
-    # Remove the old plots
+    # --- Hierarchical Rotation ---
+    # 1. Upper arm rotates from the shoulder (origin)
+    rotated_upper_arm = rot_upper_arm_abs.apply(original_upper_arm_vertices.reshape(-1, 3)).reshape(original_upper_arm_vertices.shape)
+
+    # 2. Calculate the elbow's new position at the end of the rotated upper arm
+    elbow_pos = rot_upper_arm_abs.apply([0, 0, -upper_arm_length])
+    
+    # 3. The forearm's rotation is relative to the world, so we apply it directly.
+    #    Then we translate the entire rotated forearm to the new elbow position.
+    rotated_forearm_local = rot_forearm_abs.apply(original_forearm_vertices.reshape(-1, 3)).reshape(original_forearm_vertices.shape)
+    translated_forearm = rotated_forearm_local + elbow_pos
+    
+    # 4. Attach the other parts to their respective segments
+    translated_elbow = rot_forearm_abs.apply(original_elbow_vertices.reshape(-1, 3)).reshape(original_elbow_vertices.shape) + elbow_pos
+    translated_fist = rot_forearm_abs.apply(original_fist_vertices.reshape(-1, 3)).reshape(original_fist_vertices.shape) + elbow_pos
+
+    # Remove and redraw all plots
+    upper_arm_plot.remove()
+    elbow_plot.remove()
     forearm_plot.remove()
     fist_plot.remove()
+    
+    upper_arm_plot = ax.plot_surface(*rotated_upper_arm.T, color='skyblue')
+    elbow_plot = ax.plot_surface(*translated_elbow.T, color='royalblue')
+    forearm_plot = ax.plot_surface(*translated_forearm.T, color='lightcoral')
+    fist_plot = ax.plot_surface(*translated_fist.T, color='darksalmon')
 
-    # Plot the newly rotated forearm and fist
-    forearm_plot = ax.plot_surface(
-        rotated_forearm[:,:,0],
-        rotated_forearm[:,:,1],
-        rotated_forearm[:,:,2],
-        color='lightcoral', alpha=0.8)
-        
-    fist_plot = ax.plot_surface(
-        rotated_fist[:,:,0],
-        rotated_fist[:,:,1],
-        rotated_fist[:,:,2],
-        color='darksalmon', alpha=0.9)
+    return shoulder_plot, upper_arm_plot, elbow_plot, forearm_plot, fist_plot
 
-    return forearm_plot, fist_plot
-
-# --- 4. Create and Save the Animation ---
-
-ani = FuncAnimation(fig, update, frames=len(quaternions), blit=False, interval=100)
-
-# Save the animation (you may need to install imagemagick or use a different writer)
-# Using 'pillow' writer is a good alternative if 'imagemagick' is not installed.
-ani.save('bicep_curl_animation.gif', writer='pillow', fps=15)
-
-plt.show() # Optional: displays the animation window
+# --- 5. Create and Save the Animation ---
+ani = FuncAnimation(fig, update, frames=min_frames, blit=False, interval=100)
+ani.save('bicep_curl_final.gif', writer='pillow', fps=4)
+plt.close()

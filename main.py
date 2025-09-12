@@ -229,7 +229,7 @@ if __name__ == "__main__":
     
     startTime = movelladot_pc_sdk.XsTimeStamp_nowMs()
     
-    while movelladot_pc_sdk.XsTimeStamp_nowMs() - startTime <= recording_time * 1000:
+    while movelladot_pc_sdk.XsTimeStamp_nowMs() - startTime <= recording_time * 2000:
         if XdpcHandler.packetsAvailable():
             display_line = ""
             
