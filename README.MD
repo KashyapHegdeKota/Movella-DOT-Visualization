@@ -122,7 +122,7 @@ After recording, the script will automatically generate a visualization (e.g., f
 
 - **CSV Data:** See sample files such as `1757800606.4119213_output.csv`
 - **GIF Visualization:** Example `bicep_curl_final.gif` generated after running the script.
-
+[Watch the demo video](https://drive.google.com/file/d/13dU5MoopGRZqzG9f50rJfTdQJ3M5PEKR/view?usp=sharing)
 ---
 
 ## License
