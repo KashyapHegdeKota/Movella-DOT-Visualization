@@ -4,7 +4,6 @@ import time
 import threading
 from typing import List, Tuple, Dict
 import csv
-import time
 import keyboard
 
 class MovellaDotManager:
@@ -447,48 +446,76 @@ class MovellaDotManager:
             except:
                 pass
         return False
-def record_quaternions_to_csv(manager, filename: str, duration: int = 10):
-        """Record quaternion data from all devices to a CSV file for a specified duration"""
-        devices = manager.get_connected_devices()
-        if(len(devices)!=2):
-            print("This function is designed for exactly 2 devices.")
-            return
-        addr1 = devices[0][0].bluetoothAddress()
-        addr2 = devices[1][0].bluetoothAddress()
-        print("Press SPACE to start recording, BACKSPACE to stop...")
-        while True:
-            if keyboard.is_pressed('space'):
-                break
-            time.sleep(0.1)
-        print("Recording started... Press BACKSPACE to stop early.")
+    
 
+def record_quaternions_to_csv(manager, filename: str):
+    """
+    Record quaternion data from all connected devices to a CSV file.
+    The recording starts when the SPACE bar is pressed and stops when BACKSPACE is pressed.
+    """
+    # Get the list of connected device objects and their information
+    connected_devices_info = manager.get_connected_devices()
+    
+    # Check if any devices are connected before proceeding
+    if not connected_devices_info:
+        print("Error: No devices are connected. Cannot start recording.")
+        return
+        
+    num_devices = len(connected_devices_info)
+    print(f"Found {num_devices} connected device(s).")
+
+    # Extract the Bluetooth address and label for each device
+    addresses = [dev[0].bluetoothAddress() for dev in connected_devices_info]
+    labels = [dev[1]['label'] for dev in connected_devices_info]
+    
+    print("\nPress SPACE to start recording.")
+    print("Press BACKSPACE to stop recording.")
+    
+    # Wait for the user to press the space bar to start
+    while not keyboard.is_pressed('space'):
+        time.sleep(0.01)
+
+    print("\n▶️ Recording started... (Press BACKSPACE to stop)")
+
+    try:
         with open(filename, "w", newline='') as f:
             writer = csv.writer(f)
-            writer.writerow([
-                "tracker_1_WXYZ",
-                "tracker_2_WXYZ"
-            ])
-            start = time.time()
-            while True:
-                if keyboard.is_pressed('backspace'):
-                    print("Recording stopped.")
-                    break
-                row = [None, None]
+            
+            # Create a dynamic header row based on device labels
+            # e.g., ["tracker_1_WXYZ", "tracker_2_WXYZ", "tracker_3_WXYZ"]
+            header = [f"{label}_WXYZ" for label in labels]
+            writer.writerow(header)
+            
+            # Loop until the user presses the backspace key
+            while not keyboard.is_pressed('backspace'):
+                # Check if there are any available data packets from the devices
                 if manager.handler.packetsAvailable():
-                    packet1 = manager.handler.getNextPacket(addr1)
-                    packet2 = manager.handler.getNextPacket(addr2)
+                    # Prepare a list to hold data for one row (one sample from each device)
+                    row_data = [None] * num_devices
+                    
+                    # Try to get the next packet for each connected device
+                    for i, addr in enumerate(addresses):
+                        packet = manager.handler.getNextPacket(addr)
+                        
+                        # If a valid packet with orientation data is found, process it
+                        if packet and packet.containsOrientation():
+                            quat = packet.orientationQuaternion()
+                            # Format the quaternion data as a "W,X,Y,Z" string
+                            row_data[i] = f"{quat[0]:.4f},{quat[1]:.4f},{quat[2]:.4f},{quat[3]:.4f}"
+                    
+                    # Write the row to the CSV only if we received data from ALL devices
+                    # This ensures that each row in the CSV is a complete, synchronized sample
+                    if all(cell is not None for cell in row_data):
+                        writer.writerow(row_data)
+                
+                # A small delay to prevent the loop from using 100% CPU
+                time.sleep(0.01)
+                
+    except Exception as e:
+        print(f"\nAn error occurred during recording: {e}")
+    finally:
+        print(f"\n⏹️ Recording stopped. Data saved to {filename}")
 
-                    if packet1 and packet1.containsOrientation():
-                        quat1 = packet1.orientationQuaternion()
-                        row[0] = f"{quat1[0]:.4f},{quat1[1]:.4f},{quat1[2]:.4f},{quat1[3]:.4f}"
-                    if packet2 and packet2.containsOrientation():
-                        quat2 = packet2.orientationQuaternion()
-                        row[1] = f"{quat2[0]:.4f},{quat2[1]:.4f},{quat2[2]:.4f},{quat2[3]:.4f}"
-
-                    if row[0] is not None and row[1] is not None:
-                        writer.writerow(row)
-                time.sleep(0.01)  # Small delay to avoid busy waiting
-        print(f"✓ Quaternion data recorded to {filename}")
 
 def setup_movella_dots():
     """
