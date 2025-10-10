@@ -37,7 +37,7 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
-VIRTUAL_ENV="C:\Program Files\Movella\DOT PC SDK 2023.6\SDK Files\Examples\python\venv39"
+VIRTUAL_ENV="C:\Users\Kashyap Hegde Kota\Documents\Research\Movella-DOT-Visualization\venv39"
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"
