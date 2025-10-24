@@ -8,6 +8,6 @@ manager = setup_movella_dots()
 if manager:
     # Your code here - devices are ready to use
     print("Devices ready!")
-    record_quaternions_to_csv(manager, f"{start_time}_output.csv", duration=10)
+    record_quaternions_to_csv(manager, "quaternion_data.csv")
     # When done:
     manager.cleanup()
