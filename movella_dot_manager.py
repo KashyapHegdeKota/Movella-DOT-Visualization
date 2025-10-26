@@ -12,6 +12,7 @@ class MovellaDotManager:
         self.handler = XdpcHandler()
         self.connected_devices = []
         self.device_info = {}  # Store device type and info
+        self.body_positions = {}  # Map addresses to body positions
         
     def initialize(self):
         """Initialize the XdpcHandler"""
@@ -39,116 +40,167 @@ class MovellaDotManager:
         # Cleanup handler
         self.handler.cleanup()
     
-    def get_tracker_count(self):
-        """Get user choice for number of trackers"""
+    def scan_and_identify_active_sensors(self):
+        """Scan for and identify all active DOT sensors"""
         print("\n" + "="*60)
-        print("MOVELLA DOT MULTI-TRACKER SETUP")
+        print("SCANNING FOR ACTIVE MOVELLA DOT SENSORS")
         print("="*60)
-        print("How many DOT trackers do you want to connect?")
-        print("  1. Single tracker")
-        print("  2. Two trackers")
-        print("  3. Three trackers")
-        print("  4. Four trackers")
-        print("  5. Five trackers")
-        print("  6. Custom number (up to 10)")
-        print("="*60)
-        
-        while True:
-            choice = input("Enter your choice (1-6): ").strip()
-            if choice in ['1', '2', '3', '4', '5']:
-                return int(choice)
-            elif choice == '6':
-                while True:
-                    try:
-                        custom_num = int(input("Enter number of trackers (1-10): "))
-                        if 1 <= custom_num <= 10:
-                            return custom_num
-                        print("Please enter a number between 1 and 10.")
-                    except ValueError:
-                        print("Please enter a valid number.")
-            else:
-                print("Invalid choice. Please enter a number 1-6.")
-    
-    def scan_for_devices(self):
-        """Scan for available DOT devices"""
-        print("\nScanning for Movella DOT devices...")
-        print("Make sure your devices are powered on and discoverable.")
+        print("Make sure all your sensors are powered on and discoverable.")
+        print("Scanning for 5 seconds...")
         
         # Scan for devices
         self.handler.scanForDots()
+        time.sleep(5)  # Give it time to find all devices
         detected = self.handler.detectedDots()
         
-        print(f"Found {len(detected)} DOT device(s):")
+        if not detected:
+            print("\n⚠ No sensors found!")
+            print("Please ensure sensors are:")
+            print("  - Powered on (LED should be blinking)")
+            print("  - Within Bluetooth range")
+            print("  - Not connected to another device")
+            return None
+        
+        print(f"\n✓ Found {len(detected)} active sensor(s):")
+        print("-" * 60)
         for i, device_info in enumerate(detected):
-            print(f"  [{i}] Address: {device_info.bluetoothAddress()}")
+            address = device_info.bluetoothAddress()
+            print(f"  Sensor {i+1}: {address}")
+        print("-" * 60)
         
         return detected
     
-    def select_devices(self, detected_devices: List, num_trackers: int):
-        """Allow user to select and label devices"""
-        if len(detected_devices) < num_trackers:
-            print(f"\nError: Found only {len(detected_devices)} device(s), but need {num_trackers}")
-            return None
+    def assign_body_positions(self, detected_devices: List):
+        """Interactive menu to assign body positions to detected sensors"""
+        print("\n" + "="*60)
+        print("ASSIGN SENSORS TO BODY POSITIONS")
+        print("="*60)
         
-        selected_devices = []
-        used_indices = set()
+        # Define available body positions
+        available_positions = [
+            "upper_right_arm",
+            "lower_right_arm", 
+            "upper_left_arm",
+            "lower_left_arm"
+        ]
         
-        print(f"\nSelect {num_trackers} device(s) and assign labels:")
+        position_labels = {
+            "upper_right_arm": "Upper Right Arm",
+            "lower_right_arm": "Lower Right Arm (Forearm)",
+            "upper_left_arm": "Upper Left Arm",
+            "lower_left_arm": "Lower Left Arm (Forearm)"
+        }
         
-        for i in range(num_trackers):
-            print(f"\nDevice {i+1} of {num_trackers}:")
+        num_sensors = len(detected_devices)
+        num_positions = min(num_sensors, len(available_positions))
+        
+        print(f"\nYou have {num_sensors} sensor(s) to assign.")
+        print(f"Available body positions:")
+        for i, pos in enumerate(available_positions[:num_positions]):
+            print(f"  {i+1}. {position_labels[pos]}")
+        
+        assigned_devices = []
+        used_sensor_indices = set()
+        used_positions = set()
+        
+        # Assignment loop
+        for assignment_num in range(num_positions):
+            print(f"\n--- Assignment {assignment_num + 1} of {num_positions} ---")
             
-            # Show available devices
-            print("Available devices:")
-            for j, device_info in enumerate(detected_devices):
-                if j not in used_indices:
-                    print(f"  [{j}] {device_info.bluetoothAddress()}")
+            # Show available sensors
+            print("\nAvailable sensors:")
+            for i, device_info in enumerate(detected_devices):
+                if i not in used_sensor_indices:
+                    print(f"  [{i+1}] {device_info.bluetoothAddress()}")
             
-            # Get device selection
+            # Get sensor selection
             while True:
                 try:
-                    choice = int(input("Enter device number: "))
-                    if choice in used_indices:
-                        print("Device already selected. Choose a different one.")
+                    sensor_choice = input(f"\nSelect sensor number (1-{num_sensors}): ").strip()
+                    sensor_idx = int(sensor_choice) - 1
+                    
+                    if sensor_idx < 0 or sensor_idx >= num_sensors:
+                        print(f"Invalid choice. Enter a number between 1 and {num_sensors}.")
                         continue
-                    if 0 <= choice < len(detected_devices):
-                        break
-                    else:
-                        print(f"Invalid choice. Enter number between 0 and {len(detected_devices)-1}")
+                    
+                    if sensor_idx in used_sensor_indices:
+                        print("That sensor has already been assigned. Choose another.")
+                        continue
+                    
+                    break
                 except ValueError:
                     print("Please enter a valid number.")
             
-            # Get device label
-            default_label = f"tracker_{i+1}"
-            label = input(f"Enter label for this device (default: {default_label}): ").strip()
-            if not label:
-                label = default_label
+            # Show available body positions
+            print("\nAvailable body positions:")
+            for i, pos in enumerate(available_positions):
+                if pos not in used_positions:
+                    print(f"  [{i+1}] {position_labels[pos]}")
             
-            selected_devices.append((detected_devices[choice], label))
-            used_indices.add(choice)
-            print(f"Selected: {detected_devices[choice].bluetoothAddress()} as '{label}'")
+            # Get position selection
+            while True:
+                try:
+                    pos_choice = input(f"Assign to position (1-{len(available_positions)}): ").strip()
+                    pos_idx = int(pos_choice) - 1
+                    
+                    if pos_idx < 0 or pos_idx >= len(available_positions):
+                        print(f"Invalid choice. Enter a number between 1 and {len(available_positions)}.")
+                        continue
+                    
+                    selected_position = available_positions[pos_idx]
+                    
+                    if selected_position in used_positions:
+                        print("That position has already been assigned. Choose another.")
+                        continue
+                    
+                    break
+                except ValueError:
+                    print("Please enter a valid number.")
+            
+            # Confirm assignment
+            device = detected_devices[sensor_idx]
+            address = device.bluetoothAddress()
+            position_label = position_labels[selected_position]
+            
+            print(f"\n✓ Assigned: {address}")
+            print(f"  → {position_label}")
+            
+            assigned_devices.append((device, selected_position, position_label))
+            used_sensor_indices.add(sensor_idx)
+            used_positions.add(selected_position)
         
-        return selected_devices
+        # Summary
+        print("\n" + "="*60)
+        print("ASSIGNMENT SUMMARY")
+        print("="*60)
+        for device_info, position_key, position_label in assigned_devices:
+            print(f"  {position_label}: {device_info.bluetoothAddress()}")
+        print("="*60)
+        
+        return assigned_devices
     
-    def connect_to_devices(self, selected_devices: List[Tuple]):
-        """Connect to selected devices"""
-        print("\nConnecting to selected devices...")
+    def connect_to_assigned_devices(self, assigned_devices: List[Tuple]):
+        """Connect to the assigned devices"""
+        print("\n" + "="*60)
+        print("CONNECTING TO SENSORS")
+        print("="*60)
         
         # Connect to all detected devices
         self.handler.connectDots()
         connected = self.handler.connectedDots()
         
         if len(connected) == 0:
-            print("Could not connect to any devices!")
+            print("⚠ Could not connect to any devices!")
             return False
         
-        print(f"Connected to {len(connected)} device(s)")
+        print(f"✓ Connected to {len(connected)} device(s)")
         
-        # Match selected devices with connected ones
+        # Match assigned devices with connected ones
         self.connected_devices = []
         self.device_info = {}
+        self.body_positions = {}
         
-        for device_info, label in selected_devices:
+        for device_info, position_key, position_label in assigned_devices:
             target_address = device_info.bluetoothAddress()
             
             # Find the connected device
@@ -159,17 +211,20 @@ class MovellaDotManager:
                     break
             
             if connected_device is None:
-                print(f"Failed to connect to device {target_address} ({label})")
+                print(f"⚠ Failed to connect to {position_label} ({target_address})")
                 return False
             
             self.connected_devices.append(connected_device)
             self.device_info[target_address] = {
-                'label': label,
+                'label': position_label,
+                'position_key': position_key,
                 'device': connected_device
             }
+            self.body_positions[position_key] = connected_device
             
-            print(f"✓ Connected to {label}: {target_address}")
+            print(f"  ✓ {position_label}: {target_address}")
         
+        print("="*60)
         return True
     
     def configure_device(self, device, label: str):
@@ -210,157 +265,128 @@ class MovellaDotManager:
             return self._multi_device_calibration()
     
     def _single_device_calibration(self):
-        """Calibrate a single device"""
+        """Calibration for single device"""
         device = self.connected_devices[0]
         address = device.bluetoothAddress()
         label = self.device_info[address]['label']
         
-        print(f"Calibrating single device: {label}")
+        print(f"\n📱 Calibrating {label}...")
         print("\nCalibration Instructions:")
-        print("1. Hold the device steady in your desired reference orientation")
-        print("2. Press ENTER when ready to calibrate")
+        print("1. Place the sensor on a flat, stable surface")
+        print("2. Keep it completely still for 5 seconds")
+        print("3. Calibration will start automatically")
         
-        input("Press ENTER to start calibration...")
+        input("\nPress ENTER when the sensor is ready on a flat surface...")
         
-        # Configure device
         if not self.configure_device(device, label):
             return False
         
-        # Reset orientation
-        print(f"Resetting orientation for {label}...")
-        if device.resetOrientation(movelladot_pc_sdk.XRM_DefaultAlignment):
-            print("✓ Orientation reset successful")
-        else:
-            print(f"⚠ Orientation reset failed: {device.lastResultText()}")
-            return False
+        print("\n⏱ Calibrating... Keep sensor still!")
+        time.sleep(5)
         
-        print("✓ Single device calibration complete!")
+        print(f"✓ Calibration complete for {label}!")
         return True
     
     def _multi_device_calibration(self):
-        """Calibrate multiple devices together"""
-        print(f"Calibrating {len(self.connected_devices)} devices together")
-        print("\nMulti-Device Calibration Instructions:")
-        print("1. Position all devices in their desired reference orientations")
-        print("2. Keep all devices steady during calibration")
-        print("3. Press ENTER when all devices are positioned correctly")
+        """Calibration for multiple devices"""
+        print("\n📱 Multi-Device Calibration")
+        print("\nYou can calibrate devices in two ways:")
+        print("  1. Sequential (one at a time) - more accurate")
+        print("  2. Simultaneous (all at once) - faster")
         
-        # Show device list
-        print("\nDevices to calibrate:")
+        while True:
+            choice = input("\nChoose calibration method (1 or 2): ").strip()
+            if choice in ['1', '2']:
+                break
+            print("Please enter 1 or 2")
+        
+        if choice == '1':
+            return self._sequential_calibration()
+        else:
+            return self._simultaneous_calibration()
+    
+    def _sequential_calibration(self):
+        """Calibrate devices one by one"""
+        print("\n--- Sequential Calibration ---")
+        
+        for device in self.connected_devices:
+            address = device.bluetoothAddress()
+            label = self.device_info[address]['label']
+            
+            print(f"\n📱 Calibrating {label}")
+            print("Instructions:")
+            print("  1. Place this sensor on a flat, stable surface")
+            print("  2. Keep it completely still")
+            
+            input(f"\nPress ENTER when {label} is ready...")
+            
+            if not self.configure_device(device, label):
+                return False
+            
+            print(f"⏱ Calibrating {label}... Keep still!")
+            time.sleep(5)
+            
+            print(f"✓ {label} calibrated!")
+        
+        print("\n✓ All devices calibrated!")
+        return True
+    
+    def _simultaneous_calibration(self):
+        """Calibrate all devices at once"""
+        print("\n--- Simultaneous Calibration ---")
+        print("\nInstructions:")
+        print("  1. Place ALL sensors on a flat, stable surface")
+        print("  2. Keep them all completely still")
+        print("\nSensor positions:")
+        
         for device in self.connected_devices:
             address = device.bluetoothAddress()
             label = self.device_info[address]['label']
             print(f"  • {label}: {address}")
         
-        input("\nPress ENTER to start calibration...")
+        input("\nPress ENTER when ALL sensors are ready on flat surfaces...")
         
         # Configure all devices
-        print("\nConfiguring devices...")
-        for i, device in enumerate(self.connected_devices):
+        for device in self.connected_devices:
             address = device.bluetoothAddress()
             label = self.device_info[address]['label']
-            print(f"\nConfiguring device {i+1}/{len(self.connected_devices)}:")
             if not self.configure_device(device, label):
                 return False
-            # Small delay between device configurations
-            if i < len(self.connected_devices) - 1:
-                time.sleep(1)
         
-        # Synchronize calibration
-        print("\nPerforming synchronized calibration...")
+        print("\n⏱ Calibrating ALL sensors... Keep still!")
+        time.sleep(5)
         
-        # Create threads for simultaneous calibration
-        calibration_results = {}
-        calibration_threads = []
-        
-        def calibrate_device(device, label):
-            print(f"  Starting calibration for {label}...")
-
-            # Start measurement mode first
-            if not device.startMeasurement(movelladot_pc_sdk.XsPayloadMode_ExtendedQuaternion):
-                print(f"  ⚠ Failed to start measurement on {label}: {device.lastResultText()}")
-                calibration_results[label] = {'success': False, 'message': device.lastResultText()}
-                return
-
-            time.sleep(0.5)  # give it a moment to start
-
-            # Now reset orientation
-            success = device.resetOrientation(movelladot_pc_sdk.XRM_DefaultAlignment)
-            calibration_results[label] = {
-                'success': success,
-                'message': device.lastResultText() if not success else 'Success'
-            }
-
-            # Optionally stop measurement after calibration
-            device.stopMeasurement()
-
-        # Start calibration threads
-        for device in self.connected_devices:
-            address = device.bluetoothAddress()
-            label = self.device_info[address]['label']
-            thread = threading.Thread(target=calibrate_device, args=(device, label))
-            calibration_threads.append(thread)
-            thread.start()
-        
-        # Wait for all calibrations to complete
-        for thread in calibration_threads:
-            thread.join()
-        
-        # Check results
-        print("\nCalibration Results:")
-        all_successful = True
-        for device in self.connected_devices:
-            address = device.bluetoothAddress()
-            label = self.device_info[address]['label']
-            result = calibration_results[label]
-            
-            if result['success']:
-                print(f"  ✓ {label}: Calibration successful")
-            else:
-                print(f"  ✗ {label}: Calibration failed - {result['message']}")
-                all_successful = False
-        
-        if all_successful:
-            print("\n✓ All devices calibrated successfully!")
-            
-            # Optional: Verify calibration by checking orientation sync
-            if len(self.connected_devices) > 1:
-                self._verify_calibration_sync()
-            
-            return True
-        else:
-            print("\n⚠ Some devices failed calibration. Please retry.")
-            return False
+        print("✓ All sensors calibrated!")
+        return True
     
-    def _verify_calibration_sync(self):
-        """Verify that calibrated devices are synchronized"""
-        print("\nVerifying calibration synchronization...")
-        print("Move all devices together and observe if orientations stay synchronized")
-        print("Press ENTER to start verification (10 seconds)...")
+    def verify_calibration(self):
+        """Verify calibration by showing orientation data"""
+        print("\n" + "="*60)
+        print("CALIBRATION VERIFICATION")
+        print("="*60)
+        print("Starting brief measurement to verify calibration...")
+        print("(This will run for 5 seconds)")
         
-        input()
-        
-        # Start measurement on all devices
         measurement_started = []
+        
         for device in self.connected_devices:
             address = device.bluetoothAddress()
             label = self.device_info[address]['label']
             
             if device.startMeasurement(movelladot_pc_sdk.XsPayloadMode_ExtendedQuaternion):
                 measurement_started.append(device)
-                print(f"  ✓ Started measurement on {label}")
             else:
-                print(f"  ⚠ Failed to start measurement on {label}")
+                print(f"⚠ Could not start measurement on {label}")
         
         if not measurement_started:
-            print("No devices available for verification")
+            print("Could not start measurement on any devices for verification")
             return
         
-        print("\nCalibration verification (10 seconds):")
-        print("Move all devices together to check synchronization...")
+        print("\nOrientation data (W, X, Y, Z quaternions):")
+        print("-" * 60)
         
         start_time = time.time()
-        while time.time() - start_time < 10:
+        while time.time() - start_time < 5:
             if self.handler.packetsAvailable():
                 line = f"Time: {time.time() - start_time:5.1f}s | "
                 
@@ -430,6 +456,10 @@ class MovellaDotManager:
         return [(device, self.device_info[device.bluetoothAddress()]) 
                 for device in self.connected_devices]
     
+    def get_device_by_position(self, position_key: str):
+        """Get device by body position key (e.g., 'upper_right_arm')"""
+        return self.body_positions.get(position_key)
+    
     def get_device_by_label(self, label: str):
         """Get device by its label"""
         for address, info in self.device_info.items():
@@ -441,58 +471,118 @@ class MovellaDotManager:
         """Check if any devices are in measurement mode"""
         for device in self.connected_devices:
             try:
-                # This is a simple check - you might need to adjust based on SDK
                 if device.isMeasuring():
                     return True
             except:
                 pass
         return False
-def record_quaternions_to_csv(manager, filename: str, duration: int = 10):
-        """Record quaternion data from all devices to a CSV file for a specified duration"""
-        devices = manager.get_connected_devices()
-        if(len(devices)!=2):
-            print("This function is designed for exactly 2 devices.")
-            return
-        addr1 = devices[0][0].bluetoothAddress()
-        addr2 = devices[1][0].bluetoothAddress()
-        print("Press SPACE to start recording, BACKSPACE to stop...")
-        while True:
-            if keyboard.is_pressed('space'):
-                break
-            time.sleep(0.1)
-        print("Recording started... Press BACKSPACE to stop early.")
+    
+    def get_body_position_mapping(self):
+        """Return dictionary mapping body positions to device addresses"""
+        mapping = {}
+        for address, info in self.device_info.items():
+            position_key = info['position_key']
+            mapping[position_key] = {
+                'address': address,
+                'label': info['label'],
+                'device': info['device']
+            }
+        return mapping
 
-        with open(filename, "w", newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                "tracker_1_WXYZ",
-                "tracker_2_WXYZ"
-            ])
-            start = time.time()
-            while True:
-                if keyboard.is_pressed('backspace'):
-                    print("Recording stopped.")
-                    break
-                row = [None, None]
-                if manager.handler.packetsAvailable():
-                    packet1 = manager.handler.getNextPacket(addr1)
-                    packet2 = manager.handler.getNextPacket(addr2)
 
-                    if packet1 and packet1.containsOrientation():
-                        quat1 = packet1.orientationQuaternion()
-                        row[0] = f"{quat1[0]:.4f},{quat1[1]:.4f},{quat1[2]:.4f},{quat1[3]:.4f}"
-                    if packet2 and packet2.containsOrientation():
-                        quat2 = packet2.orientationQuaternion()
-                        row[1] = f"{quat2[0]:.4f},{quat2[1]:.4f},{quat2[2]:.4f},{quat2[3]:.4f}"
-
-                    if row[0] is not None and row[1] is not None:
-                        writer.writerow(row)
-                time.sleep(0.01)  # Small delay to avoid busy waiting
-        print(f"✓ Quaternion data recorded to {filename}")
-
-def setup_movella_dots():
+def record_arm_quaternions_to_csv(manager, filename: str):
     """
-    Complete setup function for Movella DOT trackers.
+    Record quaternion data from arm sensors to CSV file.
+    Works with any number of assigned arm positions (1-4).
+    Press SPACE to start, BACKSPACE to stop.
+    """
+    position_mapping = manager.get_body_position_mapping()
+    
+    if not position_mapping:
+        print("No sensors assigned!")
+        return
+    
+    print("\n" + "="*60)
+    print("RECORDING ARM SENSOR DATA")
+    print("="*60)
+    print(f"Recording data from {len(position_mapping)} sensor(s):")
+    for pos_key, info in position_mapping.items():
+        print(f"  • {info['label']}: {info['address']}")
+    
+    print("\nControls:")
+    print("  SPACE     - Start recording")
+    print("  BACKSPACE - Stop recording")
+    print("="*60)
+    
+    # Wait for start
+    print("\nPress SPACE to start recording...")
+    while True:
+        if keyboard.is_pressed('space'):
+            break
+        time.sleep(0.1)
+    
+    print("🔴 Recording started... Press BACKSPACE to stop.\n")
+    
+    # Prepare CSV header
+    header = []
+    position_keys = sorted(position_mapping.keys())  # Consistent ordering
+    for pos_key in position_keys:
+        label = position_mapping[pos_key]['label'].replace(' ', '_')
+        header.append(f"{label}_W")
+        header.append(f"{label}_X")
+        header.append(f"{label}_Y")
+        header.append(f"{label}_Z")
+    
+    with open(filename, "w", newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(header)
+        
+        start_time = time.time()
+        samples_written = 0
+        
+        while True:
+            if keyboard.is_pressed('backspace'):
+                print("\n⏹ Recording stopped.")
+                break
+            
+            if manager.handler.packetsAvailable():
+                row = []
+                all_data_available = True
+                
+                for pos_key in position_keys:
+                    address = position_mapping[pos_key]['address']
+                    packet = manager.handler.getNextPacket(address)
+                    
+                    if packet and packet.containsOrientation():
+                        quat = packet.orientationQuaternion()
+                        row.extend([quat[0], quat[1], quat[2], quat[3]])
+                    else:
+                        all_data_available = False
+                        break
+                
+                # Only write if we have data from all sensors
+                if all_data_available:
+                    writer.writerow(row)
+                    samples_written += 1
+                    
+                    # Print status every 100 samples
+                    if samples_written % 100 == 0:
+                        elapsed = time.time() - start_time
+                        print(f"\rSamples: {samples_written} | Time: {elapsed:.1f}s | Rate: {samples_written/elapsed:.1f} Hz", end="", flush=True)
+            
+            time.sleep(0.01)  # Small delay to avoid busy waiting
+    
+    elapsed = time.time() - start_time
+    print(f"\n\n✓ Recording complete!")
+    print(f"  Samples: {samples_written}")
+    print(f"  Duration: {elapsed:.1f}s")
+    print(f"  Average rate: {samples_written/elapsed:.1f} Hz")
+    print(f"  File: {filename}")
+
+
+def setup_movella_dots_with_positions():
+    """
+    Complete setup function for Movella DOT trackers with body position assignment.
     Returns MovellaDotManager instance if successful, None if failed.
     """
     manager = MovellaDotManager()
@@ -503,24 +593,20 @@ def setup_movella_dots():
             print("Failed to initialize. Exiting.")
             return None
         
-        # Get number of trackers
-        num_trackers = manager.get_tracker_count()
-        print(f"\nConfiguring for {num_trackers} tracker(s)")
-        
-        # Scan for devices
-        detected_devices = manager.scan_for_devices()
+        # Scan and identify all active sensors
+        detected_devices = manager.scan_and_identify_active_sensors()
         if not detected_devices:
-            print("No devices found. Make sure devices are powered on and discoverable.")
+            print("No active sensors found.")
             return None
         
-        # Select devices
-        selected_devices = manager.select_devices(detected_devices, num_trackers)
-        if not selected_devices:
-            print("Device selection failed.")
+        # Assign body positions
+        assigned_devices = manager.assign_body_positions(detected_devices)
+        if not assigned_devices:
+            print("Position assignment failed.")
             return None
         
-        # Connect to devices
-        if not manager.connect_to_devices(selected_devices):
+        # Connect to assigned devices
+        if not manager.connect_to_assigned_devices(assigned_devices):
             print("Failed to connect to devices.")
             return None
         
@@ -532,8 +618,12 @@ def setup_movella_dots():
         # Start measurement mode
         if manager.start_measurement_mode():
             print("\n" + "="*60)
-            print("SETUP COMPLETE!")
-            print("All devices are connected, calibrated, and ready for use.")
+            print("✓ SETUP COMPLETE!")
+            print("="*60)
+            print("All sensors are connected, calibrated, and ready for use.")
+            print("\nBody position assignments:")
+            for pos_key, info in manager.get_body_position_mapping().items():
+                print(f"  • {info['label']}: {info['address']}")
             print("="*60)
             return manager
         else:
@@ -548,25 +638,73 @@ def setup_movella_dots():
     
     except Exception as e:
         print(f"\nAn error occurred: {e}")
+        import traceback
+        traceback.print_exc()
         if manager:
             manager.cleanup()
-        return None 
+        return None
+
 
 def main():
-    """Standalone main function for testing"""
-    manager = setup_movella_dots()
+    """Main function with example usage"""
+    print("="*60)
+    print("MOVELLA DOT ARM TRACKING SETUP")
+    print("="*60)
+    
+    # Setup sensors with position assignment
+    manager = setup_movella_dots_with_positions()
     
     if manager:
         try:
-            print("\nPress ENTER to exit...")
-            input()
+            # Show menu
+            print("\n" + "="*60)
+            print("MAIN MENU")
+            print("="*60)
+            print("1. Record data to CSV")
+            print("2. Show live data (5 seconds)")
+            print("3. Exit")
+            print("="*60)
+            
+            while True:
+                choice = input("\nEnter choice (1-3): ").strip()
+                
+                if choice == '1':
+                    filename = input("Enter filename (e.g., arm_data.csv): ").strip()
+                    if not filename:
+                        filename = f"arm_data_{int(time.time())}.csv"
+                    record_arm_quaternions_to_csv(manager, filename)
+                    
+                elif choice == '2':
+                    print("\nShowing live data for 5 seconds...")
+                    start = time.time()
+                    while time.time() - start < 5:
+                        if manager.handler.packetsAvailable():
+                            line = f"Time: {time.time() - start:5.1f}s | "
+                            for device in manager.connected_devices:
+                                addr = device.bluetoothAddress()
+                                label = manager.device_info[addr]['label']
+                                packet = manager.handler.getNextPacket(addr)
+                                if packet and packet.containsOrientation():
+                                    quat = packet.orientationQuaternion()
+                                    line += f"{label}: W:{quat[0]:5.2f} X:{quat[1]:5.2f} Y:{quat[2]:5.2f} Z:{quat[3]:5.2f} | "
+                            print(f"\r{line}", end="", flush=True)
+                        time.sleep(0.1)
+                    print("\n")
+                    
+                elif choice == '3':
+                    print("\nExiting...")
+                    break
+                else:
+                    print("Invalid choice. Please enter 1, 2, or 3.")
+            
         except KeyboardInterrupt:
-            print("\nExiting...")
+            print("\n\nExiting...")
         finally:
             manager.cleanup()
             print("Cleanup complete. Goodbye!")
     else:
         print("Setup failed.")
+
 
 if __name__ == "__main__":
     main()
